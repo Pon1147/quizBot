@@ -3,7 +3,7 @@ const {
   createQuiz,
   startQuiz,
   stopQuiz,
-  joinQuiz, // Thêm import joinQuiz
+  joinQuiz,
 } = require("../../services/quizManager");
 const config = require("../../../config.json");
 
@@ -66,22 +66,19 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand.setName("stop").setDescription("Dừng quiz đang chạy")
     )
-    .addSubcommand(
-      (
-        subcommand // THÊM JOIN SUBCOMMAND
-      ) =>
-        subcommand
-          .setName("join")
-          .setDescription("Tham gia quiz đang chạy")
-          .addStringOption((option) =>
-            option
-              .setName("quiz_id")
-              .setDescription("ID quiz cần join (từ /create)")
-              .setRequired(true)
-          )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("join")
+        .setDescription("Tham gia quiz đang chạy")
+        .addStringOption((option) =>
+          option
+            .setName("quiz_id")
+            .setDescription("ID quiz cần join (từ /create)")
+            .setRequired(true)
+        )
     ),
   async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand(true);
+    const subcommand = interaction.options.getSubcommand(true); // Bắt buộc subcommand
     console.log(`🔄 Executing subcommand: ${subcommand}`);
 
     try {
@@ -143,13 +140,13 @@ module.exports = {
       }
 
       if (subcommand === "join") {
-        // THÊM HANDLE JOIN
         const quizId = interaction.options.getString("quiz_id");
         await joinQuiz(interaction, quizId);
         return;
       }
 
-      await interaction.editReply("Subcommand không hỗ trợ!");
+      // Không cần fallback vì subcommand bắt buộc (Discord sẽ không cho dùng lệnh sai)
+      throw new Error(`Subcommand ${subcommand} không hỗ trợ!`);
     } catch (error) {
       console.error(`❌ Execute error for ${subcommand}:`, error);
       if (interaction.deferred) {
