@@ -1,9 +1,10 @@
-const { SlashCommandSubcommandBuilder } = require("discord.js"); // Fix: SubcommandBuilder
+const { SlashCommandBuilder, MessageFlags } = require("discord.js");
+const { checkQuizPerms } = require("../../utils/permissions");
 const { createQuiz } = require("../../services/quizManager");
 const config = require("../../../config.json");
 
 module.exports = {
-  data: new SlashCommandSubcommandBuilder()
+  data: new SlashCommandBuilder()
     .setName("create")
     .setDescription("Tạo quiz mới")
     .addStringOption((option) =>
@@ -41,26 +42,47 @@ module.exports = {
         .setDescription("Channel chạy quiz (mặc định hiện tại)")
         .setRequired(false)
     ),
-  async execute(interaction, hasPerms) {
-    if (!hasPerms) {
-      return interaction.editReply("❌ Bạn không có quyền tạo quiz!");
-    }
-    const category = interaction.options.getString("category");
-    const questions_count =
-      interaction.options.getInteger("questions_count") ||
-      config.quiz.default_questions_count;
-    const time_per_question =
-      interaction.options.getInteger("time_per_question") ||
-      config.quiz.default_time_per_question;
-    const channel =
-      interaction.options.getChannel("channel")?.id || interaction.channel.id;
+  async execute(interaction) {
+    console.log(`🔄 Executing create`);
 
-    await createQuiz(
-      interaction,
-      category,
-      questions_count,
-      time_per_question,
-      channel
-    );
+    try {
+      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+      const hasPerms = await checkQuizPerms(interaction);
+
+      if (!hasPerms) {
+        return interaction.editReply("❌ Bạn không có quyền tạo quiz!");
+      }
+      const category = interaction.options.getString("category");
+      const questions_count =
+        interaction.options.getInteger("questions_count") ||
+        config.quiz.default_questions_count;
+      const time_per_question =
+        interaction.options.getInteger("time_per_question") ||
+        config.quiz.default_time_per_question;
+      const channel =
+        interaction.options.getChannel("channel")?.id || interaction.channel.id;
+
+      await createQuiz(
+        interaction,
+        category,
+        questions_count,
+        time_per_question,
+        channel
+      );
+    } catch (error) {
+      console.error(`❌ Execute error for create:`, error);
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: `❌ Lỗi create: ${error.message}`,
+          flags: [MessageFlags.Ephemeral],
+        });
+      } else {
+        await interaction.reply({
+          content: `❌ Lỗi create: ${error.message}`,
+          flags: [MessageFlags.Ephemeral],
+        });
+      }
+    }
   },
 };

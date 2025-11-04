@@ -1,132 +1,57 @@
-const { SlashCommandBuilder, MessageFlags } = require("discord.js");
-const { checkQuizPerms } = require("../../utils/permissions");
 const {
-  createQuiz,
-  startQuiz,
-  stopQuiz,
-} = require("../../services/quizManager");
+  SlashCommandBuilder,
+  EmbedBuilder,
+  MessageFlags,
+} = require("discord.js");
 const config = require("../../../config.json");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("quiz")
-    .setDescription("Quản lý quiz ZingSpeed Mobile")
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName("create")
-        .setDescription("Tạo quiz mới")
-        .addStringOption((option) =>
-          option
-            .setName("category")
-            .setDescription("Loại câu hỏi")
-            .setRequired(true)
-            .addChoices(
-              { name: config.categories.vehicles, value: "vehicles" },
-              { name: config.categories.maps, value: "maps" },
-              { name: config.categories.gameplay, value: "gameplay" },
-              { name: config.categories.items, value: "items" },
-              { name: config.categories.history, value: "history" }
-            )
-        )
-        .addIntegerOption((option) =>
-          option
-            .setName("questions_count")
-            .setDescription("Số câu (mặc định 10)")
-            .setRequired(false)
-            .setMinValue(5)
-            .setMaxValue(50)
-        )
-        .addIntegerOption((option) =>
-          option
-            .setName("time_per_question")
-            .setDescription("Thời gian mỗi câu (mặc định 20s)")
-            .setRequired(false)
-            .setMinValue(10)
-            .setMaxValue(60)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel chạy quiz (mặc định hiện tại)")
-            .setRequired(false)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName("start")
-        .setDescription("Bắt đầu quiz đã tạo")
-        .addStringOption((option) =>
-          option
-            .setName("quiz_id")
-            .setDescription("ID quiz cần start (từ /create)")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand.setName("stop").setDescription("Dừng quiz đang chạy")
-    ),
+    .setDescription("Quản lý quiz ZingSpeed Mobile"),
   async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand(true);
-    console.log(`🔄 Executing subcommand: ${subcommand}`);
+    console.log(`🔄 Executing quiz`);
 
     try {
-      await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+      const embed = new EmbedBuilder()
+        .setTitle("📚 Quiz ZingSpeed Mobile")
+        .setDescription("Sử dụng các lệnh sau để quản lý quiz:")
+        .addFields(
+          {
+            name: "/create",
+            value: "Tạo quiz mới với category (xe, bản đồ, ...)",
+            inline: true,
+          },
+          { name: "/start", value: "Bắt đầu quiz bằng quiz_id", inline: true },
+          { name: "/stop", value: "Dừng quiz đang chạy", inline: true },
+          {
+            name: "Categories",
+            value: Object.values(config.categories).join(", "),
+            inline: false,
+          },
+          {
+            name: "Defaults",
+            value: `Số câu: ${config.quiz.default_questions_count} | Thời gian: ${config.quiz.default_time_per_question}s`,
+            inline: false,
+          }
+        )
+        .setColor("#00ff00")
+        .setFooter({ text: "Cần quyền Quiz Admin để sử dụng!" });
 
-      const hasPerms = await checkQuizPerms(interaction);
-
-      if (subcommand === "create") {
-        if (!hasPerms) {
-          return interaction.editReply("❌ Bạn không có quyền tạo quiz!");
-        }
-        const category = interaction.options.getString("category");
-        const questions_count =
-          interaction.options.getInteger("questions_count") ||
-          config.quiz.default_questions_count;
-        const time_per_question =
-          interaction.options.getInteger("time_per_question") ||
-          config.quiz.default_time_per_question;
-        const channel =
-          interaction.options.getChannel("channel")?.id ||
-          interaction.channel.id;
-
-        await createQuiz(
-          interaction,
-          category,
-          questions_count,
-          time_per_question,
-          channel
-        );
-        return;
-      }
-
-      if (subcommand === "start") {
-        if (!hasPerms) {
-          return interaction.editReply("❌ Bạn không có quyền start quiz!");
-        }
-        const quizId = interaction.options.getString("quiz_id");
-        await startQuiz(interaction, quizId);
-        return;
-      }
-
-      if (subcommand === "stop") {
-        if (!hasPerms) {
-          return interaction.editReply("❌ Bạn không có quyền dừng quiz!");
-        }
-        await stopQuiz(interaction);
-        return;
-      }
-
-      throw new Error(`Subcommand ${subcommand} không hỗ trợ!`);
+      await interaction.reply({
+        embeds: [embed],
+        flags: [MessageFlags.Ephemeral],
+      });
     } catch (error) {
-      console.error(`❌ Execute error for ${subcommand}:`, error);
-      if (interaction.deferred) {
-        await interaction.editReply({
-          content: `❌ Lỗi ${subcommand}: ${error.message}`,
+      console.error(`❌ Execute error for quiz:`, error);
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: `❌ Lỗi quiz: ${error.message}`,
           flags: [MessageFlags.Ephemeral],
         });
       } else {
         await interaction.reply({
-          content: `❌ Lỗi ${subcommand}: ${error.message}`,
+          content: `❌ Lỗi quiz: ${error.message}`,
           flags: [MessageFlags.Ephemeral],
         });
       }

@@ -29,7 +29,7 @@ const client = new Client({
 client.commands = new Collection();
 client.commandArray = [];
 
-// Load commands (skip sub files, chỉ load main quiz.js)
+// Load commands (load tất cả files, không skip subs)
 const commandsPath = path.join(__dirname, "commands");
 if (fs.existsSync(commandsPath)) {
   const commandFolders = fs.readdirSync(commandsPath);
@@ -37,13 +37,7 @@ if (fs.existsSync(commandsPath)) {
     const folderPath = path.join(commandsPath, folder);
     const commandFiles = fs
       .readdirSync(folderPath)
-      .filter(
-        (file) =>
-          file.endsWith(".js") &&
-          file !== "create.js" &&
-          file !== "start.js" &&
-          file !== "stop.js"
-      ); // Skip subs
+      .filter((file) => file.endsWith(".js")); // Load all
     for (const file of commandFiles) {
       const filePath = path.join(folderPath, file);
       const command = require(filePath);
