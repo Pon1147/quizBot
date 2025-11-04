@@ -120,6 +120,7 @@ module.exports = {
         totalParticipants: 0,
         avgCorrect: 0,
         avgTime: "N/A",
+        hardestQuestion: null, // New: Fallback null
       };
     }
 
@@ -142,6 +143,26 @@ module.exports = {
     );
     const avgTime = avgTimeRow?.avg_time?.toFixed(2) ?? "N/A";
 
-    return { finalScores, totalParticipants, avgCorrect, avgTime };
+    // New: Tính câu khó nhất (min % đúng per question_number)
+    const hardestRow = await db.dbQuery(
+      `SELECT question_number, 
+     ROUND((SUM(is_correct) * 100.0 / COUNT(*)), 1) as correct_rate
+     FROM quiz_answers WHERE quiz_id = ? GROUP BY question_number ORDER BY correct_rate ASC LIMIT 1`,
+      [quizId]
+    );
+    const hardestQuestion = hardestRow
+      ? {
+          number: hardestRow.question_number,
+          correctRate: hardestRow.correct_rate,
+        }
+      : null;
+
+    return {
+      finalScores,
+      totalParticipants,
+      avgCorrect,
+      avgTime,
+      hardestQuestion,
+    };
   },
 };

@@ -9,7 +9,7 @@ const {
 } = require("../utils/logger");
 const config = require("../../config.json");
 const crypto = require("crypto");
-const { Op } = require("sequelize"); // Fix: Import Op
+const { Op } = require("sequelize");
 
 const { validateCategory, validateQuizParams } = require("./quizValidator");
 const {
@@ -54,15 +54,16 @@ async function createQuiz(
       time_per_question
     ));
 
+    // Patch 4: Check all statuses to limit total active/pending per server
     const activeQuiz = await db.Quiz.findOne({
       where: {
         server_id: serverId,
-        status: { [Op.in]: ["starting", "running"] },
-      }, // Use Op.in for array
+        status: { [Op.in]: ["created", "starting", "running"] }, // Include "created"
+      },
     });
     if (activeQuiz)
       return interaction.editReply(
-        `❌ Đã có quiz đang chạy! (ID: ${activeQuiz.id})`
+        `❌ Đã có quiz đang chờ/chạy! (ID: ${activeQuiz.id}, Status: ${activeQuiz.status})`
       );
 
     const newQuiz = await db.Quiz.create({
@@ -119,7 +120,34 @@ async function startQuiz(interaction, quizId) {
     const msg = await channel.send({
       embeds: [startCountdownEmbed(quiz, count)],
     });
-    await channel.send("@everyone");
+
+    // Patch 7: Mention role from env (fallback @everyone with catch)
+    const roleId = process.env.ROLE_NOTIFY_ID;
+    if (roleId) {
+      try {
+        const roleMention = `<@&${roleId}>`;
+        await channel.send(roleMention);
+        console.log(`✅ Mentioned role ${roleId} for quiz start`);
+      } catch (mentionErr) {
+        console.warn("⚠️ Role mention failed:", mentionErr.message);
+        // Fallback
+        try {
+          await channel.send("@everyone");
+        } catch (fallbackErr) {
+          console.warn(
+            "⚠️ @everyone fallback failed (rate limit?):",
+            fallbackErr.message
+          );
+        }
+      }
+    } else {
+      // No env, use @everyone with catch
+      try {
+        await channel.send("@everyone");
+      } catch (mentionErr) {
+        console.warn("⚠️ @everyone failed (rate limit?):", mentionErr.message);
+      }
+    }
 
     const countdownInterval = setInterval(async () => {
       count--;
@@ -172,7 +200,7 @@ async function startQuestionRound(quizId, questionNumber, channel, quiz) {
     );
 
     const whereClause =
-      usedIds.length > 0 ? { id: { [Op.notIn]: usedIds } } : {}; // Fix: Use imported Op
+      usedIds.length > 0 ? { id: { [Op.notIn]: usedIds } } : {};
     const question = await db.Question.findOne({
       where: { ...whereClause, category: quiz.category },
       order: db.sequelize.literal("RANDOM()"),
@@ -276,16 +304,35 @@ async function endQuiz(quizId, channel, quiz) {
     const { finalScores, totalParticipants, avgCorrect, avgTime } =
       await calculateFinalStats(quizId, quiz, db);
 
+    // Patch 3: Always log completion (even no participants)
+    logQuizCompleted({
+      quiz_id: quizId,
+      completed_at: new Date().toISOString(),
+      total_participants: totalParticipants,
+      avg_score:
+        totalParticipants > 0
+          ? finalScores.reduce((sum, s) => sum + s.total_score, 0) /
+            totalParticipants
+          : 0,
+      avg_correct_rate: totalParticipants > 0 ? avgCorrect : 0,
+      top_3: finalScores.slice(0, 3).map((s) => ({
+        user_id: s.user_id,
+        username: s.username,
+        score: s.total_score,
+      })),
+      duration_seconds: (new Date() - new Date(quiz.started_at)) / 1000,
+    });
+
     if (finalScores.length === 0) {
       const noParticipantsEmbedResult = noParticipantsEmbed(quizId, quiz);
       await channel.send({ embeds: [noParticipantsEmbedResult] });
       channel.send(
         "Cảm ơn các bạn đã tham gia! 🎉 Hẹn gặp lại ở quiz tiếp theo! 🏁"
       );
-      await db.dbRun(
-        'UPDATE quizzes SET status = "finished", finished_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [quizId]
-      );
+      // Patch 2: Cleanup UsedQuestions
+      await db.UsedQuestion.destroy({ where: { quiz_id: quizId } });
+      // Patch 5: Use model update
+      await quiz.update({ status: "finished", finished_at: new Date() });
       return;
     }
 
@@ -301,24 +348,6 @@ async function endQuiz(quizId, channel, quiz) {
         : 0;
     const avgTimeFinal = avgTime;
 
-    logQuizCompleted({
-      quiz_id: quizId,
-      completed_at: new Date().toISOString(),
-      total_participants: totalParticipants,
-      avg_score:
-        totalParticipants > 0
-          ? finalScores.reduce((sum, s) => sum + s.total_score, 0) /
-            totalParticipants
-          : 0,
-      avg_correct_rate: avgCorrectFinal,
-      top_3: finalScores.map((s) => ({
-        user_id: s.user_id,
-        username: s.username,
-        score: s.total_score,
-      })),
-      duration_seconds: (new Date() - new Date(quiz.started_at)) / 1000,
-    });
-
     const embed = endQuizEmbed(
       quizId,
       quiz,
@@ -328,7 +357,7 @@ async function endQuiz(quizId, channel, quiz) {
       avgTimeFinal
     );
 
-    // Award chỉ top 3
+    // Patch 1 (demo): Chỉ award role top1 + log coins (sau add economy)
     if (finalScores[0]) {
       const top1Member = channel.guild.members.cache.get(
         finalScores[0].user_id
@@ -337,29 +366,30 @@ async function endQuiz(quizId, channel, quiz) {
         const championRole = channel.guild.roles.cache.find(
           (r) => r.name === config.roles.quiz_champion
         );
-        if (championRole) top1Member.roles.add(championRole);
+        if (championRole) await top1Member.roles.add(championRole);
         console.log(
-          `Awarded Top1: ${finalScores[0].user_id} - Role + ${config.rewards.top_1.coins} coins`
+          `Awarded Top1: ${finalScores[0].user_id} - Role + ${config.rewards.top_1.coins} coins (demo)`
         );
       }
     }
     if (finalScores[1])
       console.log(
-        `Awarded Top2: ${finalScores[1].user_id} - ${config.rewards.top_2.coins} coins`
+        `Awarded Top2: ${finalScores[1].user_id} - ${config.rewards.top_2.coins} coins (demo)`
       );
     if (finalScores[2])
       console.log(
-        `Awarded Top3: ${finalScores[2].user_id} - ${config.rewards.top_3.coins} coins`
+        `Awarded Top3: ${finalScores[2].user_id} - ${config.rewards.top_3.coins} coins (demo)`
       );
+
+    // Patch 2: Cleanup UsedQuestions
+    await db.UsedQuestion.destroy({ where: { quiz_id: quizId } });
 
     await channel.send({ embeds: [embed] });
     channel.send(
       "Cảm ơn các bạn đã tham gia! 🎉 Hẹn gặp lại ở quiz tiếp theo! 🏁"
     );
-    await db.dbRun(
-      'UPDATE quizzes SET status = "finished", finished_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [quizId]
-    );
+    // Patch 5: Use model update
+    await quiz.update({ status: "finished", finished_at: new Date() });
   } catch (err) {
     console.error("End quiz error:", err);
     channel.send("❌ Lỗi kết thúc quiz!");
@@ -369,17 +399,25 @@ async function endQuiz(quizId, channel, quiz) {
 async function stopQuiz(interaction) {
   try {
     const serverId = interaction.guild.id;
-    const activeQuiz = await db.dbQuery(
-      'SELECT id, channel_id FROM quizzes WHERE server_id = ? AND status IN ("starting", "running")',
-      [serverId]
-    );
+    // Patch 5: Use model for consistency
+    const activeQuiz = await db.Quiz.findOne({
+      where: {
+        server_id: serverId,
+        status: { [Op.in]: ["starting", "running"] },
+      },
+    });
     if (!activeQuiz)
       return interaction.editReply("❌ Không có quiz đang chạy!");
 
-    await db.dbRun(
-      'UPDATE quizzes SET status = "stopped", finished_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [activeQuiz.id]
-    );
+    // Patch 5: Use model update
+    await activeQuiz.update({
+      status: "stopped",
+      finished_at: new Date(),
+    });
+
+    // Patch 2: Cleanup UsedQuestions
+    await db.UsedQuestion.destroy({ where: { quiz_id: activeQuiz.id } });
+
     const channel = interaction.guild.channels.cache.get(activeQuiz.channel_id);
     if (channel) channel.send(`🛑 Quiz ${activeQuiz.id} đã bị dừng!`);
     await interaction.editReply(`✅ Đã dừng quiz ${activeQuiz.id}!`);
@@ -401,7 +439,6 @@ async function joinQuiz(interaction, quizId) {
     );
     if (!quiz) return interaction.reply("❌ Không có quiz đang chạy!");
     await db.QuizParticipant.upsert({
-      // Fix: Use model upsert for FK safe
       quiz_id: quizId,
       user_id: interaction.user.id,
       username: interaction.user.username,

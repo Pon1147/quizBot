@@ -28,7 +28,7 @@ module.exports = {
         { name: "📍 Channel", value: `<#${channelId}>`, inline: true }
       )
       .setColor(0x00ff00)
-      .setFooter({ text: `Sử dụng /quiz start ${quizId} để bắt đầu` });
+      .setFooter({ text: `Sử dụng /start ${quizId} để bắt đầu` });
   },
 
   startCountdownEmbed: (quiz, count, isGo = false) => {
@@ -38,7 +38,11 @@ module.exports = {
       quiz.time_per_question
     }s/câu\n\n🎁 Giải thưởng:\n🥇 Top 1: Role "${
       config.roles.quiz_champion
-    }" + 1000 coins\n🥈 Top 2: 500 coins\n🥉 Top 3: 250 coins\n\nChuẩn bị sẵn sàng! 🏎️💨`;
+    }" + ${config.rewards.top_1.coins} coins\n🥈 Top 2: ${
+      config.rewards.top_2.coins
+    } coins\n🥉 Top 3: ${
+      config.rewards.top_3.coins
+    } coins\n\nChuẩn bị sẵn sàng! 🏎️💨`;
 
     let description;
     if (isGo) {
@@ -170,7 +174,8 @@ module.exports = {
     finalScores,
     totalParticipants,
     avgCorrect,
-    avgTime
+    avgTime,
+    hardestQuestion = null // New param: { number: X, correctRate: Y% } from calculateFinalStats
   ) => {
     const embed = new EmbedBuilder()
       .setTitle("🏆 BẢNG XẾP HẠNG CUỐI CÙNG")
@@ -184,7 +189,7 @@ module.exports = {
       const medal = ["🥇", "🥈", "🥉"][idx];
       embed.addFields({
         name: `${medal} ${entry.username}`,
-        value: `📊 Điểm: **${entry.total_score}**\n✅ Đúng: ${entry.correct_answers}/${quiz.questions_count}\n⏱️ Trung bình: ${avgTime}s`,
+        value: `📊 Điểm: **${entry.total_score}**\n✅ Đúng: ${entry.correct_answers}/${quiz.questions_count}`,
         inline: true,
       });
     });
@@ -192,12 +197,18 @@ module.exports = {
     embed.addFields(
       {
         name: "🎁 Phần thưởng đã được trao",
-        value: `🥇 Role + 1000 coins | 🥈 500 coins | 🥉 250 coins`,
+        value: `🥇 Role + ${config.rewards.top_1.coins} coins | 🥈 ${config.rewards.top_2.coins} coins | 🥉 ${config.rewards.top_3.coins} coins`,
         inline: false,
       },
       {
         name: "📈 Thống kê Quiz",
-        value: `👥 Số người tham gia: ${totalParticipants}\n✅ Tỷ lệ đúng trung bình: ${avgCorrect}%\n⏱️ Thời gian trả lời TB: ${avgTime}s\n🔥 Câu khó nhất: N/A`,
+        value: `👥 Số người tham gia: ${totalParticipants}\n✅ Tỷ lệ đúng trung bình: ${avgCorrect}%\n⏱️ Thời gian trả lời TB: ${
+          avgTime !== "N/A" ? avgTime + "s" : "N/A"
+        }\n🔥 Câu khó nhất: ${
+          hardestQuestion
+            ? `Q${hardestQuestion.number} (${hardestQuestion.correctRate}%)`
+            : "N/A"
+        }`,
         inline: false,
       }
     );
