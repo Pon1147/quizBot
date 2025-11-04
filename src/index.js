@@ -18,8 +18,10 @@ const {
   REST,
   Routes,
 } = require("discord.js");
-const { initDatabase } = require("./utils/database");
-const config = require("../config.json");
+const { initDatabase } = require("./src/utils/database");
+const config = require("./config.json");
+const { initManager } = require("./services/quizManager");
+initManager().catch(console.error);
 
 // Debug: Log token status
 console.log(
@@ -27,7 +29,17 @@ console.log(
   process.env.DISCORD_TOKEN ? "YES" : "NO"
 );
 console.log("🔧 DB init...");
-initDatabase(); // Init DB early
+initDatabase(); // Init DB early (legacy nếu cần)
+
+(async () => {
+  try {
+    await initManager(); // Init QuizManager với Sequelize
+    console.log("✅ QuizManager initialized.");
+  } catch (err) {
+    console.error("❌ Failed to init QuizManager:", err);
+    process.exit(1);
+  }
+})();
 
 // Client setup
 const client = new Client({
@@ -45,7 +57,7 @@ client.commands = new Collection();
 client.commandArray = []; // For deploy
 
 // Load commands
-const commandsPath = path.join(__dirname, "commands");
+const commandsPath = path.join(__dirname, "src/commands");
 if (fs.existsSync(commandsPath)) {
   const commandFolders = fs.readdirSync(commandsPath);
   for (const folder of commandFolders) {
@@ -63,7 +75,7 @@ if (fs.existsSync(commandsPath)) {
 }
 
 // Load events
-const eventsPath = path.join(__dirname, "events");
+const eventsPath = path.join(__dirname, "src/events");
 if (fs.existsSync(eventsPath)) {
   const eventFiles = fs
     .readdirSync(eventsPath)

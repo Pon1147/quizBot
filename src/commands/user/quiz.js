@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
+const { checkQuizPerms } = require("../../utils/permissions");
 const {
   createQuiz,
   startQuiz,
@@ -77,13 +78,18 @@ module.exports = {
         )
     ),
   async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand(true); // Bắt buộc subcommand
+    const subcommand = interaction.options.getSubcommand(true);
     console.log(`🔄 Executing subcommand: ${subcommand}`);
 
     try {
       await interaction.deferReply({ ephemeral: false });
 
+      const hasPerms = await checkQuizPerms(interaction);
+
       if (subcommand === "create") {
+        if (!hasPerms) {
+          return interaction.editReply("❌ Bạn không có quyền tạo quiz!");
+        }
         const category = interaction.options.getString("category");
         const questions_count =
           interaction.options.getInteger("questions_count") ||
@@ -94,13 +100,6 @@ module.exports = {
         const channel =
           interaction.options.getChannel("channel")?.id ||
           interaction.channel.id;
-
-        if (
-          !interaction.member.permissions.has("ManageGuild") &&
-          interaction.user.id !== process.env.OWNER_ID
-        ) {
-          return interaction.editReply("❌ Bạn không có quyền tạo quiz!");
-        }
 
         await createQuiz(
           interaction,
@@ -113,27 +112,18 @@ module.exports = {
       }
 
       if (subcommand === "start") {
-        const quizId = interaction.options.getString("quiz_id");
-
-        if (
-          !interaction.member.permissions.has("ManageGuild") &&
-          interaction.user.id !== process.env.OWNER_ID
-        ) {
+        if (!hasPerms) {
           return interaction.editReply("❌ Bạn không có quyền start quiz!");
         }
-
+        const quizId = interaction.options.getString("quiz_id");
         await startQuiz(interaction, quizId);
         return;
       }
 
       if (subcommand === "stop") {
-        if (
-          !interaction.member.permissions.has("ManageGuild") &&
-          interaction.user.id !== process.env.OWNER_ID
-        ) {
+        if (!hasPerms) {
           return interaction.editReply("❌ Bạn không có quyền dừng quiz!");
         }
-
         await stopQuiz(interaction);
         return;
       }
@@ -144,7 +134,6 @@ module.exports = {
         return;
       }
 
-      // Không cần fallback vì subcommand bắt buộc (Discord sẽ không cho dùng lệnh sai)
       throw new Error(`Subcommand ${subcommand} không hỗ trợ!`);
     } catch (error) {
       console.error(`❌ Execute error for ${subcommand}:`, error);

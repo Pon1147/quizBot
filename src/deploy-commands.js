@@ -1,62 +1,25 @@
 require("dotenv").config();
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
-const commands = [
-  new SlashCommandBuilder()
-    .setName("quiz")
-    .setDescription("Quản lý quiz ZingSpeed Mobile")
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName("create")
-        .setDescription("Tạo quiz mới")
-        .addStringOption((option) =>
-          option
-            .setName("category")
-            .setDescription("Loại câu hỏi")
-            .setRequired(true)
-            .addChoices(
-              { name: "Xe cộ", value: "vehicles" },
-              { name: "Bản đồ", value: "maps" },
-              { name: "Lối chơi", value: "gameplay" },
-              { name: "Vật phẩm", value: "items" },
-              { name: "Lịch sử game", value: "history" },
-            )
-        )
-        .addIntegerOption((option) =>
-          option
-            .setName("questions_count")
-            .setDescription("Số câu (5-50)")
-            .setRequired(false)
-        )
-        .addIntegerOption((option) =>
-          option
-            .setName("time_per_question")
-            .setDescription("Thời gian mỗi câu (10-60s)")
-            .setRequired(false)
-        )
-        .addChannelOption((option) =>
-          option
-            .setName("channel")
-            .setDescription("Channel chạy quiz")
-            .setRequired(false)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName("start")
-        .setDescription("Bắt đầu quiz")
-        .addStringOption((option) =>
-          option
-            .setName("quiz_id")
-            .setDescription("ID quiz cần start")
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand.setName("stop").setDescription("Dừng quiz đang chạy")
-    )
-    .toJSON(),
-].map((command) => command);
+const commandsPath = path.join(__dirname, "src/commands");
+const commandArray = [];
+
+if (fs.existsSync(commandsPath)) {
+  const commandFolders = fs.readdirSync(commandsPath);
+  for (const folder of commandFolders) {
+    const folderPath = path.join(commandsPath, folder);
+    const commandFiles = fs
+      .readdirSync(folderPath)
+      .filter((file) => file.endsWith(".js"));
+    for (const file of commandFiles) {
+      const filePath = path.join(folderPath, file);
+      const command = require(filePath);
+      commandArray.push(command.data.toJSON());
+    }
+  }
+}
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
@@ -68,7 +31,7 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
         process.env.CLIENT_ID,
         process.env.GUILD_ID
       ),
-      { body: commands }
+      { body: commandArray }
     );
     console.log("✅ Deployed guild-specific!");
   } catch (error) {
